@@ -77,14 +77,14 @@ describe("客户共享协同与商机产品线防撞单排他机制集成测试"
     // 创建标准测试产品
     const prod1Res = await owner.query<{ id: string }>(
       `insert into products (tenant_id, name, code, category, unit_price, status)
-       values ($1, '商脉AI企业标准版', 'CODE-CRM-STD', '软件服务', 500000, 'ACTIVE') returning id`,
+       values ($1, '企业标准版套装', 'CODE-CRM-STD', '软件服务', 500000, 'ACTIVE') returning id`,
       [tenantId],
     );
     productSoftwareId = prod1Res.rows[0].id;
 
     const prod2Res = await owner.query<{ id: string }>(
       `insert into products (tenant_id, name, code, category, unit_price, status)
-       values ($1, '商脉边缘计算网关盒', 'CODE-HW-BOX', '硬件终端', 300000, 'ACTIVE') returning id`,
+       values ($1, '边缘计算网关盒', 'CODE-HW-BOX', '硬件终端', 300000, 'ACTIVE') returning id`,
       [tenantId],
     );
     productHardwareId = prod2Res.rows[0].id;
@@ -230,7 +230,7 @@ describe("客户共享协同与商机产品线防撞单排他机制集成测试"
     );
     const contactId = contact.rows[0].id;
 
-    // 销售 1 已经在推进 productSoftwareId (商脉AI企业标准版)
+    // 销售 1 已经在推进 productSoftwareId (企业标准版套装)
     // 销售 2 尝试立项相同产品，应被即时拦截并报错 COLLISION
     await expect(
       opportunityService.createOpportunityService(sales2Ctx, {
@@ -240,7 +240,7 @@ describe("客户共享协同与商机产品线防撞单排他机制集成测试"
         intendedProductId: productSoftwareId,
         expectedAmount: 500000,
       }),
-    ).rejects.toThrow("该客户已有销售【软件销售顾问张三】在推进【商脉AI企业标准版】相关商机");
+    ).rejects.toThrow("该客户已有销售【软件销售顾问张三】在推进【企业标准版套装】相关商机");
 
     // 销售 2 尝试通过选配报价 lineItems 包含相同产品立项，应同样被拦截
     await expect(
@@ -257,7 +257,7 @@ describe("客户共享协同与商机产品线防撞单排他机制集成测试"
           },
         ],
       }),
-    ).rejects.toThrow("该客户已有销售【软件销售顾问张三】在推进【商脉AI企业标准版】相关商机");
+    ).rejects.toThrow("该客户已有销售【软件销售顾问张三】在推进【企业标准版套装】相关商机");
 
     // 销售 2 尝试通过产品名称文本相同立项，应同样被拦截
     await expect(
@@ -265,7 +265,7 @@ describe("客户共享协同与商机产品线防撞单排他机制集成测试"
         customerId,
         primaryContactId: contactId,
         name: "未来科技-软件意向项目",
-        intendedProduct: "商脉AI企业标准版",
+        intendedProduct: "企业标准版套装",
       }),
     ).rejects.toThrow("同客户同产品方向暂不允许重复立项");
   });
@@ -302,7 +302,7 @@ describe("客户共享协同与商机产品线防撞单排他机制集成测试"
         expectedCloseAt: new Date(Date.now() + 86400000),
         demandNote: "意向软件产品冲突",
       }),
-    ).rejects.toThrow("该客户已有销售【软件销售顾问张三】在推进【商脉AI企业标准版】相关商机");
+    ).rejects.toThrow("该客户已有销售【软件销售顾问张三】在推进【企业标准版套装】相关商机");
 
     // 创建另一条属于销售 2 的线索，意向为云部署产品（不冲突）
     const leadValid = await leadsService.createLeadService(sales2Ctx, {

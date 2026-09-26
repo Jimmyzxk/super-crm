@@ -1,10 +1,12 @@
-# 商脉AI CRM 产品全景架构、业务规则与操作教程手册 (Product Specification & Operations Manual)
+# Super CRM 产品全景架构、业务规则与操作教程手册 (Product Specification & Operations Manual)
 
-> **品牌名称**：商脉AI CRM (Enterprise AI Sales Cloud)  
+> **品牌名称**：Super CRM (Enterprise AI Sales Cloud)  
 > **版本**：v1.3.0  
 > **状态**：正式发布 (Production Standard)  
 > **适用对象**：产品经理、销售业务团队、系统实施顾问、开发与运维工程师  
-> **文档定位**：本手册为「商脉AI CRM」全业务规则、冲突判定模型、生命周期状态机、权限门禁与标准作业程序 (SOP) 的官方权威开放文档，供产品培训、操作教程制作与业务审计溯源使用。
+> **文档定位**：本手册为「Super CRM」全业务规则、冲突判定模型、生命周期状态机、权限门禁与标准作业程序 (SOP) 的官方权威开放文档，供产品培训、操作教程制作与业务审计溯源使用。
+
+> ⚠️ **关于开源版**：本手册描述的是完整产品形态。本仓库为「主代码开源 + 业务插件闭源」发行版，**不含** 7 个业务插件的实现（合同、订单、交付项目、BI 矩阵、获客表单、知识库、智能分发）。文中涉及合同条款、订单与回款、发票、交付项目、公开表单获客、知识库等环节的描述属于闭源插件，开源版运行时不会出现对应入口；核心链路（线索 → 客户 → 商机 → 成交 → 复盘）完整可用。详见 [README 发行形态说明](../README.md#关于发行形态)。
 
 ---
 
@@ -22,7 +24,7 @@
 
 ## 1. 产品定位与 L2C 业务全景图
 
-「商脉AI CRM」是一套面向现代 B2B 企业的 **AI-Native 全流程销售增长与客户生命周期管理平台**。系统围绕 **L2C (Lead-to-Cash，从线索到现金)** 核心链路，解决多渠道线索防撞单、多联系人复杂决策链、多商机协同推进与流失资产打捞等复杂业务痛点。
+「Super CRM」是一套面向现代 B2B 企业的 **AI-Native 全流程销售增长与客户生命周期管理平台**。系统围绕 **L2C (Lead-to-Cash，从线索到现金)** 核心链路，解决多渠道线索防撞单、多联系人复杂决策链、多商机协同推进与流失资产打捞等复杂业务痛点。
 
 ### 1.1 L2C 全生命周期核心动线
 ```
@@ -457,12 +459,12 @@ $$V = \frac{N \times S \times W}{T}$$
 
 ## 14. AI Agent 矩阵战略评估与市场化差异化方案 (Autonomous AI Agent Matrix Evaluation)
 
-在现代 Enterprise AI 浪潮下，「商脉AI CRM」的根本市场竞争力不在于“多一张表单或多一个列表”，而在于**将传统被动记录型工具进化为 24/7 主动推进行动的数智化智能体矩阵 (Autonomous AI Agent Ecosystem)**：
+在现代 Enterprise AI 浪潮下，「Super CRM」的根本市场竞争力不在于“多一张表单或多一个列表”，而在于**将传统被动记录型工具进化为 24/7 主动推进行动的数智化智能体矩阵 (Autonomous AI Agent Ecosystem)**：
 
 ```mermaid
 graph TD
-  subgraph 商脉AI Agent 三大矩阵
-    A[1. 自动营销获客 Agent<br>Auto-SDR Inbound/Outbound] --> D[(商脉AI CRM 底座)]
+  subgraph Super CRM Agent 三大矩阵
+    A[1. 自动营销获客 Agent<br>Auto-SDR Inbound/Outbound] --> D[(Super CRM 底座)]
     B[2. 销冠跟进助手 Agent<br>Top-Performer Copilot] --> D
     C[3. 经营分析决策 Agent<br>RevOps ChatBI & Risk Monitor] --> D
   end
