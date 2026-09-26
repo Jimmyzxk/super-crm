@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { dueAtError, initialDueAt, presentEvidence } from "@/app/(app)/today/presentation";
+import { BUSINESS_TZ } from "@/core/shared/tz";
 
 const now = new Date("2026-08-14T10:00:00+08:00");
 
+// 断言必须与产品代码同一口径：业务时区固定 Asia/Shanghai，不跟随宿主时区。
+// 否则在 UTC 机器（如 CI runner）上会与实现结果差 8 小时。
 function localDateTime(value: string): string {
-  return new Date(value).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+  return new Date(value).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: BUSINESS_TZ });
 }
 
 describe("今日洞察展示", () => {

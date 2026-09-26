@@ -27,6 +27,7 @@ let followupService: typeof import("@/core/followup/service");
 let collaborationService: typeof import("@/core/collaboration/service");
 let assertSafeHttpUrl: typeof import("@/core/ai-gateway/client").assertSafeHttpUrl;
 let dateInputValue: typeof import("@/core/shared/date").dateInputValue;
+let zonedWallClockToUtc: typeof import("@/core/shared/tz").zonedWallClockToUtc;
 let closeDb: typeof import("@/db/client").closeDb;
 
 describe("全项目安全漏洞与功能缺陷全面修复回归验证 (Comprehensive Bug & Security Audit)", () => {
@@ -57,6 +58,7 @@ describe("全项目安全漏洞与功能缺陷全面修复回归验证 (Comprehe
     collaborationService = await import("@/core/collaboration/service");
     assertSafeHttpUrl = (await import("@/core/ai-gateway/client")).assertSafeHttpUrl;
     dateInputValue = (await import("@/core/shared/date")).dateInputValue;
+    zonedWallClockToUtc = (await import("@/core/shared/tz")).zonedWallClockToUtc;
     closeDb = (await import("@/db/client")).closeDb;
 
     const tRes = await owner.query<{ id: string }>(`
@@ -435,11 +437,17 @@ describe("全项目安全漏洞与功能缺陷全面修复回归验证 (Comprehe
     });
   });
 
-  describe("8. 时区工具 dateInputValue 本地时间格式化验证", () => {
-    it("格式化时间为 YYYY-MM-DDTHH:mm 本地时间，不产生 UTC 偏移", () => {
-      const date = new Date(2026, 7, 24, 14, 30); // 2026-08-24 14:30
-      const formatted = dateInputValue(date);
-      expect(formatted).toBe("2026-08-24T14:30");
+  describe("8. 时区工具 dateInputValue 业务时区格式化验证", () => {
+    it("按业务时区（Asia/Shanghai）输出 YYYY-MM-DDTHH:mm，不跟随宿主时区", () => {
+      // 输入须按业务时区构造：new Date(2026, 7, 24, 14, 30) 依赖运行环境时区，
+      // 在 UTC 机器上对应上海 22:30，会让断言误判产品行为有偏移。
+      const date = zonedWallClockToUtc(2026, 8, 24, 14, 30);
+      expect(dateInputValue(date)).toBe("2026-08-24T14:30");
+    });
+
+    it("同一绝对时刻在任何宿主时区下输出一致（防回归）", () => {
+      const instant = new Date("2026-08-24T06:30:00Z"); // = 上海 14:30
+      expect(dateInputValue(instant)).toBe("2026-08-24T14:30");
     });
   });
 

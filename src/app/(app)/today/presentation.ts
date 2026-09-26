@@ -1,4 +1,5 @@
 import { dateInputValue } from "@/core/shared/date";
+import { BUSINESS_TZ } from "@/core/shared/tz";
 
 type EvidenceRecord = Record<string, unknown>;
 
@@ -23,7 +24,9 @@ function dateText(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+  // 必须显式指定业务时区：toLocaleString 默认跟随宿主时区，服务器跑在 UTC 时
+  // 会让用户看到比实际早 8 小时的跟进/截止时间，与其它展示口径不一致。
+  return date.toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: BUSINESS_TZ });
 }
 
 export function presentEvidence(evidence: unknown[]): string[] {

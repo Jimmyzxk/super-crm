@@ -3,6 +3,7 @@ import { contactUpdateSchema, convertLeadSchema } from "@/core/customer/types";
 import { createOpportunitySchema, loseOpportunitySchema, winOpportunitySchema } from "@/core/opportunity/types";
 import { isConvertPhoneValid } from "@/core/customer/convert";
 import { formatDateOnly, parseLocalDate, startOfLocalDay } from "@/core/shared/date";
+import { zonedWallClockToUtc } from "@/core/shared/tz";
 import { decodeDetailCollectionCursor, decodePoolCursor, encodeDetailCollectionCursor, encodePoolCursor, nextTimelineLimit } from "@/core/shared/pagination";
 
 describe("阶段 4 客户与商机输入契约", () => {
@@ -41,9 +42,13 @@ describe("阶段 4 客户与商机输入契约", () => {
     expect(isConvertPhoneValid(false, "13912345678", "13812345678")).toBe(true);
   });
 
-  it("日期使用本地日历的午夜", () => {
-    const today = new Date(2026, 7, 14, 23, 59);
-    expect(parseLocalDate("2026-08-14").getTime()).toBe(new Date(2026, 7, 14).getTime());
+  it("日期使用业务时区（Asia/Shanghai）的午夜", () => {
+    // parseLocalDate/startOfLocalDay 固定按业务时区解释墙钟时间，不跟随宿主时区；
+    // 故断言用同一口径计算期望值，而非 new Date(y, m, d)（后者依赖运行环境时区，
+    // 在 UTC 机器上会差 8 小时）。
+    const expectedMidnight = zonedWallClockToUtc(2026, 8, 14);
+    const today = zonedWallClockToUtc(2026, 8, 14, 23, 59);
+    expect(parseLocalDate("2026-08-14").getTime()).toBe(expectedMidnight.getTime());
     expect(startOfLocalDay(today).getTime()).toBe(parseLocalDate("2026-08-14").getTime());
     expect(parseLocalDate("2026-08-13").getTime()).toBeLessThan(parseLocalDate("2026-08-14").getTime());
   });
