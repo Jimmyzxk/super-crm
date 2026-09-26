@@ -133,12 +133,20 @@ clear_alert() {
 # ⚠️ 必须按分钟比较：cron 在 :17:00 触发，而备份常在 :17:0x~:20 完成，下个整点
 # 时间差仅 3380~3600 秒。用 `elapsed / 3600` 取整得 0，会使 `0 < 1` 恒成立、每小时
 # 都被误判为"太新"跳过，实际退化成每 2 小时备份（RPO 减半）。故按分钟 + 10% 余量。
+#
+# ⚠️ mtime 取法必须跨平台：GNU coreutils 用 `stat -c %Y`，BSD/macOS 用 `stat -f %m`。
+# 若只写 macOS 形式，在 Linux（CI、容器、Debian 服务器）上会报错并落到 fallback 0，
+# 使时间差变成天文数字、守卫判断完全错乱（实测 CI 上 3 条备份用例因此失败）。
+file_mtime() {
+  stat -c %Y -- "$1" 2>/dev/null || stat -f %m -- "$1" 2>/dev/null || echo 0
+}
+
 FRESH_HOURS="${CRM_BACKUP_FRESH_HOURS:-1}"
 FRESH_MINUTES=$(( FRESH_HOURS * 60 ))
 FRESH_THRESHOLD_MINUTES=$(( FRESH_MINUTES * 9 / 10 ))
 LATEST="$(ls -t "$BACKUP_DIR"/salescrm_*.sql.gz 2>/dev/null | head -1 || true)"
 if [ -n "$LATEST" ]; then
-  LAST_EPOCH=$(stat -f %m -- "$LATEST" 2>/dev/null || echo 0)
+  LAST_EPOCH=$(file_mtime "$LATEST")
   NOW_EPOCH=$(date +%s)
   AGE_MINUTES=$(( (NOW_EPOCH - LAST_EPOCH) / 60 ))
   if [ "$AGE_MINUTES" -lt "$FRESH_THRESHOLD_MINUTES" ]; then
@@ -191,7 +199,10 @@ mirror_backup() {
   # 假 docker 产出假 dump；若不守卫，单元测试会把假备份写进真实镜像目录，
   # 占掉镜像位并可能误导恢复。
   case "$BACKUP_DIR" in
-    /private/var/folders/*|/var/folders/*|"${TMPDIR%/}"|"${TMPDIR%/}"/*)
+    # 注意 ${TMPDIR:-} 必须带默认值：脚本开了 set -u，而 TMPDIR 在 Linux/CI
+    # 等环境常未设置，裸用 ${TMPDIR%/} 会以 "unbound variable" 非零退出，
+    # 导致备份已成功却整体判定失败（实测 CI 上 3 条用例因此红）。
+    /private/var/folders/*|/var/folders/*|"${TMPDIR:-/nonexistent-tmpdir}"|"${TMPDIR:-/nonexistent-tmpdir}"/*)
       log_line "MIRROR-SKIP: 备份目录位于系统临时目录（测试沙箱？），不做离机镜像"
       return 0 ;;
   esac
