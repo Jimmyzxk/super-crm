@@ -1,0 +1,18 @@
+node_modules
+.next
+.git
+.gitignore
+.DS_Store
+artifacts
+docs
+tests
+*.log
+.playwright-cli
+.agents
+*.tsbuildinfo
+tmp
+
+# 密钥与本机配置：绝不进镜像层（Dockerfile 有 `COPY . .`，缺失此行会把真实密钥写进 builder 层）
+.env
+.env.*
+!.env.example

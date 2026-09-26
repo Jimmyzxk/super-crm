@@ -1,0 +1,132 @@
+# ==============================================================================
+# Super CRM（商脉AI CRM）— CI 门禁
+#
+# 覆盖提交前人工门禁的全部环节：依赖可复现安装 / 类型检查 / Lint + 分层门禁 /
+# 集成测试（真实 PostgreSQL） / 生产构建。
+# 任一 step 失败即整体失败（GitHub Actions 默认语义，无 continue-on-error）。
+#
+# 开源版（AGPL-3.0）说明：本仓库为「主代码开源 + 业务插件闭源」发行版。
+#   插件框架（src/plugin-kit）与 plugin_registry / plugin_rate_limits 两张基础设施表
+#   均在仓内并被门禁覆盖；7 个业务插件（bi / contracts / form-capture / knowledge-base /
+#   lead-routing / orders / projects）的实现与数据表不在仓内，因此集成测试文件数与用例数
+#   少于闭源版（当前 42 个集成测试文件 / 77 个测试文件 / 545 个用例，零 skip）。
+#
+# 关键事实（来源：scripts/prepare-test-db.ts、scripts/migrate.ts、vitest.config.ts）
+#   - `pnpm test` = `tsx scripts/prepare-test-db.ts && vitest run`
+#   - prepare-test-db.ts 要求库名以 `_test` 结尾，且 TEST_DATABASE_URL 与
+#     TEST_MIGRATION_DATABASE_URL 指向同一个库；库不存在则 CREATE DATABASE。
+#   - scripts/migrate.ts 只读 MIGRATION_DATABASE_URL 与 APP_DATABASE_PASSWORD；
+#     后者用于创建/更新 `salescrm` 应用角色（alter role salescrm login ...）。
+#   - vitest.config.ts 设定 fileParallelism: false（串行），无需额外并发配置。
+# ==============================================================================
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+# 同一 PR 的后续 push 取消上一轮（无 concurrency 组时默认串行排队）
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: typecheck / lint / test / build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # 集成测试需要真实 PostgreSQL 17（对齐 docker-compose.yml 的 postgres:17）
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: salescrm_test
+          POSTGRES_USER: salescrm_admin
+          POSTGRES_PASSWORD: ci_admin_pw
+          # 与仓库一致：salescrm_admin 作为迁移/Owner 角色，需要可建库建角色
+          POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U salescrm_admin -d salescrm_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      # ---- 测试库 4 个必填变量（缺一即 prepare-test-db.ts 抛错）----
+      # 应用侧（受限角色 salescrm，由 migrate.ts 用 APP_DATABASE_PASSWORD 创建）
+      TEST_DATABASE_URL: postgres://salescrm:ci_app_pw@localhost:5432/salescrm_test
+      # 迁移侧（Owner 角色 salescrm_admin）——与上面必须同库、且库名以 _test 结尾
+      TEST_MIGRATION_DATABASE_URL: postgres://salescrm_admin:ci_admin_pw@localhost:5432/salescrm_test
+      # scripts/migrate.ts 只读 MIGRATION_DATABASE_URL 与 APP_DATABASE_PASSWORD；
+      # 但 prepare-test-db.ts 在 spawn `pnpm db:migrate` 时会用 TEST_MIGRATION_DATABASE_URL
+      # 覆盖它，故此处无需（也不应）指向测试库。
+      #
+      # ⚠️ 必须保持与测试库不同的库名：30 个集成测试文件顶部都有守卫
+      # `new URL(TEST_MIGRATION_DATABASE_URL).pathname !== new URL(MIGRATION_DATABASE_URL).pathname`
+      # （如 tests/integration/stage-zero.test.ts:15），相等即抛
+      # "Integration tests must not use the development database" 导致这 30 个文件失败。
+      # CI 中不存在开发库，此处的 salescrm 仅用于满足该 pathname 断言，永不会被连接
+      # （每个集成测试文件在校验后立刻把它覆盖为测试库）。
+      MIGRATION_DATABASE_URL: postgres://salescrm_admin:ci_admin_pw@localhost:5432/salescrm
+      APP_DATABASE_PASSWORD: ci_app_pw
+
+      # ---- 构建期变量 ----
+      # 实测结论（2026-09-26，本机零 env 复现）：`pnpm build` 在完全不设
+      # SESSION_SECRET/ENCRYPTION_KEY 的情况下也能通过（next build 期间所有页面
+      # 均为 ƒ 动态渲染，crypto.ts 的密钥校验发生在请求时而非模块求值时）。
+      # 此处仍注入 CI 专用假值作为前向安全垫：一旦将来新增在模块求值期读取密钥的
+      # 代码，构建不会因缺 env 诡异失败。假值仅存在于 CI，不得用于任何真实环境。
+      #
+      # ⚠️ 切勿在 job 级设 NODE_ENV=production：pnpm 会因此跳过 devDependencies
+      # （输出 "devDependencies: skipped because NODE_ENV is set to production"），
+      # 导致 tsc/vitest/tsx 全部缺失，install 仍返回 0 但 typecheck 报
+      # "sh: tsc: command not found"。NODE_ENV 只在 build 步骤内设置。
+      NEXT_TELEMETRY_DISABLED: "1"
+      SESSION_SECRET: ci_only_session_secret_0000000000000000000000000000
+      ENCRYPTION_KEY: ci_only_encryption_key_000000000000000
+      CRON_SECRET: ci_only_cron_secret_token_00000000
+      DATABASE_URL: postgres://salescrm:ci_app_pw@localhost:5432/salescrm_test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        # 不传 version：pnpm/action-setup 读取 package.json 的 packageManager: pnpm@9.15.5
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
+
+      # 1) 依赖可复现安装
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      # 2) 类型检查
+      - name: Typecheck
+        run: pnpm typecheck
+
+      # 3) Lint + 分层门禁（pnpm lint 已内含 tsx scripts/check-layer-boundary.ts，不重复执行）
+      - name: Lint (含分层门禁)
+        run: pnpm lint
+
+      # 4) 单元 + 集成测试（真实 PostgreSQL 17 + prepare-test-db 自动建表迁移）
+      - name: Test (integration, real PostgreSQL)
+        run: pnpm test
+
+      # 5) 生产构建可复现性
+      # NODE_ENV 仅在本步骤内设为 production（对齐 Dockerfile builder 阶段）
+      - name: Build
+        run: pnpm build
+        env:
+          NODE_ENV: production

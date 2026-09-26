@@ -1,0 +1,98 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: crm-postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_HOST_PORT:-127.0.0.1:54329}:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-salescrm}
+      POSTGRES_USER: ${POSTGRES_USER:-salescrm_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-salescrm_migration}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-salescrm_admin} -d ${POSTGRES_DB:-salescrm}"]
+      interval: 2s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - salescrm_pgdata:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: crm-web-dev
+    restart: unless-stopped
+    ports:
+      - "${APP_HOST_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      # Live volume mount: Any code changes on your host Mac are instantly reflected in Docker
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      NODE_OPTIONS: "--max-old-space-size=640"
+      DATABASE_URL: postgres://salescrm:${APP_DATABASE_PASSWORD:-salescrm_dev}@postgres:5432/${POSTGRES_DB:-salescrm}
+      MIGRATION_DATABASE_URL: postgres://${POSTGRES_USER:-salescrm_admin}:${POSTGRES_PASSWORD:-salescrm_migration}@postgres:5432/${POSTGRES_DB:-salescrm}
+      APP_DATABASE_PASSWORD: ${APP_DATABASE_PASSWORD:-salescrm_dev}
+      SESSION_SECRET: ${SESSION_SECRET:-salescrm-dev-session-secret-key-at-least-32-chars}
+      CRON_SECRET: ${CRON_SECRET:-salescrm-cron-secure-secret-token-key}
+      DEV_ADMIN_EMAIL: ${DEV_ADMIN_EMAIL:-admin@example.com}
+      DEV_ADMIN_PASSWORD: ${DEV_ADMIN_PASSWORD:-password123}
+      SEED_DEMO: ${SEED_DEMO:-true}
+      RUN_MIGRATIONS: ${RUN_MIGRATIONS:-true}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      AI_GATEWAY_ALLOW_HOSTS: ${AI_GATEWAY_ALLOW_HOSTS:-}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          # 上限须留出余量给同 VM 内的 postgres 与 Docker 自身：
+          # 本机 Docker VM 仅 2GB，而 dev 栈（app 1024M + postgres 256M）打满后
+          # VM 会持续换页，Virtualization.framework 进程实测飙到 95% CPU。
+          # 768M 对 Next.js dev 足够；如需更大请先上调 Docker Desktop 的 Memory 上限。
+          memory: 768M
+
+  cron:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: crm-cron-dev
+    restart: unless-stopped
+    command: ["node", "--no-warnings", "--experimental-strip-types", "scripts/cron-scheduler.ts"]
+    depends_on:
+      app:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      CRON_BASE_URL: http://app:3000
+      CRON_SECRET: ${CRON_SECRET:-salescrm-cron-secure-secret-token-key}
+      CRON_INTERVAL_MINUTES: ${CRON_INTERVAL_MINUTES:-5}
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep '[n]ode' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 96M
+
+volumes:
+  salescrm_pgdata:

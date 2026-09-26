@@ -1,0 +1,133 @@
+# ==============================================================================
+# 商脉AI CRM — 生产 HTTPS 入口（Caddy 2 TLS 终止 + 反向代理）
+#
+# 用途：解决生产 HTTP 下浏览器拒收 session cookie 的上线硬阻断。
+#   src/core/auth/actions.ts:31 与 src/core/auth/session.ts:119 均为
+#   `secure: process.env.NODE_ENV === "production"`，即生产模式下 cookie 带 Secure，
+#   浏览器只在 HTTPS 下才会存/发该 cookie。裸 HTTP 暴露 3000 端口 => 全员无法登录。
+#
+# 启动：
+#   SITE_DOMAIN=crm.example.com \
+#   SITE_TLS_MODE=ops@example.com \
+#   docker compose -f docker-compose.yml -f docker-compose.prod-tls.yml up -d
+#
+# 环境变量（由 docker-compose.prod-tls.yml 注入）：
+#   SITE_DOMAIN   必填。公网域名（需已解析到本机公网 IP，80/443 可达）。
+#                 留空会导致 caddy validate / 启动直接报错 "unrecognized global option"，
+#                 属于刻意的 fail-fast——没有域名就不该静默起一个明文服务。
+#   SITE_TLS_MODE 证书来源，一个变量两种取值（直接映射到 Caddy 的 `tls` 指令参数）：
+#                   internal         -> Caddy 本地 CA 自签（内网试用/预发，浏览器会警告）
+#                   ops@example.com  -> 公网 ACME，且用该邮箱收证书到期/吊销通知（生产推荐）
+#                 未设置时本文件回退为 internal（compose 侧另有 ${SITE_TLS_MODE:-internal} 兜底）。
+#
+# 证书自动续期：Caddy 在证书到期前自动续（默认在剩余 1/3 时限触发），无需 crontab。
+#   查看/手动触发：见 docs/22「8. TLS 与 HTTPS 入口」。
+#
+# 注意：site 地址必须写在**顶层**（不能嵌在全局 `{ }` 块里——Caddy 会报
+#   "unrecognized global option"），因此本文件不使用全局选项块。
+# ==============================================================================
+
+{$SITE_DOMAIN} {
+	# ---- TLS 模式切换 ----------------------------------------------------
+	# 展开规则（三种情形均通过 `caddy validate`）：
+	#   SITE_TLS_MODE 未设置  -> `tls internal`（自签；Caddy 的 {$VAR:default} 语法）
+	#   SITE_TLS_MODE=internal -> `tls internal`
+	#   SITE_TLS_MODE=<邮箱>   -> `tls ops@example.com`（ACME + 到期通知）
+	# ⚠️ 不要把 SITE_TLS_MODE 设成空串：Caddyfile 的 {$VAR:default} 对"已设置为空"不生效，
+	#    会报 "wrong argument count or unexpected line ending after 'tls'"。
+	#    compose 侧用 ${SITE_TLS_MODE:-internal} 保证经 compose 注入时永远非空。
+	tls {$SITE_TLS_MODE:internal}
+
+	# ---- 响应头：HSTS 由边缘统一控制 ------------------------------------
+	# 应用侧 next.config.ts 也设了 HSTS；此处显式覆盖，保证 TLS 终止点自己
+	# 就是唯一权威来源（且 app 报 500 时 HSTS 依然下发）。
+	# `header` 指令会替换上游同名响应头，因此最终只会有一个 HSTS，不会重复下发。
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+		-Server
+	}
+
+	encode zstd gzip
+
+	# ---- 反向代理到 app:3000 ---------------------------------------------
+	# app 与 caddy 同处 compose 默认网络，走容器名直连，不经过宿主机端口。
+	reverse_proxy app:3000 {
+		# ===============================================================
+		# 关键安全区：清洗客户端可伪造的"进线 IP"头
+		#
+		# 背景（W10-5 遗留待复核项：入口代理必须覆盖并清洗伪造头）：
+		# 应用侧三处直接把客户端可控的请求头当作"客户端 IP"：
+		#   src/core/leads/service.ts:729
+		#   src/app/api/public/plugins/form-capture/[formId]/submit/route.ts:8
+		#   src/plugin-kit/server.ts:210                      API Key IP 白名单准入
+		# 三者读取顺序都是 x-real-ip -> cf-connecting-ip -> x-forwarded-for。
+		#
+		# Caddy 2 默认行为有两个危险点：
+		#   1) 默认**不设置** X-Real-IP / CF-Connecting-IP，
+		#      客户端自定义的同名头会**原样透传**到 app；
+		#   2) 默认对 X-Forwarded-For 是**追加**（append）而非覆盖，
+		#      客户端可注入任意前缀/伪造整条链。
+		# 后果：任何人 `curl -H 'X-Real-IP: 203.0.113.9'` 就能冒充白名单 IP，
+		# 直接绕过 src/plugin-kit/server.ts:208-219 的 API Key IP 白名单，
+		# 以及 leads/service.ts 的进线 IP 限流/白名单；form-capture 的 IP 哈希
+		# 与去重也会被污染。
+		#
+		# 处置：下面 3 条把应用会读的每一个"客户端 IP 头"都**覆盖**为
+		#   {remote_host} = Caddy 看到的真实 TCP 对端地址（客户端无法伪造）。
+		# header_up 是覆盖（replace）而非追加，客户端注入的值全部被丢弃。
+		# ===============================================================
+		#
+		# 为何用 {remote_host} 而不是 {client_ip}：
+		#   {client_ip} 在配置了 `trusted_proxies` 时会取"可信代理链"里的真实 IP。
+		#   一旦有人把 trusted_proxies 写成 0.0.0.0/0（常见的"图省事"误配），
+		#   任意客户端就能用 X-Forwarded-For 伪造 {client_ip}，白名单绕过立即复现。
+		#   {remote_host} 是 TCP 层事实，无任何客户端可控输入，永不可伪造。
+		#   ⚠️ 若将来把 Caddy 放到另一个 LB/网关之后，必须先收紧 trusted_proxies
+		#      再改用 {client_ip}；在此之前保持 {remote_host}（fail-closed）。
+		header_up X-Real-IP {remote_host}
+		header_up CF-Connecting-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+
+		# ---- 协议/主机：供应用判定 https 与生成绝对 URL ----
+		# 同样显式覆盖：客户端不能把 https 降级成 http（会影响 secure cookie 判定、
+		# CSRF origin 校验与重定向地址生成）。
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+		# 必须用 {http.request.port}：Caddy 没有 {server_port} 占位符，
+		# 写成 {server_port} 会被原样透传给 app（实测确认，值变成字面量 "{server_port}"）。
+		header_up X-Forwarded-Port {http.request.port}
+
+		# ---- 剥掉其余转发类头，零信任 ----
+		# `header_up -Name` = 删除该头，不转发到 app。
+		# Forwarded 是 RFC 7239 标准头，部分客户端/网关会注入，同样不可信。
+		header_up -Forwarded
+		header_up -X-Forwarded-Port-Next
+		header_up -X-Original-URL
+		header_up -X-Original-Host
+		header_up -X-Rewrite-URL
+
+		# ---- 传输与超时 ----
+		transport http {
+			# 反代到 compose 内网 app:3000，走明文 HTTP，故显式不启用 TLS。
+			# 写死 dial_timeout，避免 app 假死时 Caddy 无限挂起。
+			dial_timeout 5s
+			response_header_timeout 60s
+			keepalive 30s
+		}
+	}
+
+	# ---- 访问日志（stdout，由 docker compose logs caddy 查看）------------
+	# 记录进线 IP 与状态码，便于事后审计；Caddy 默认不记录 Cookie/Authorization。
+	log {
+		output stdout
+		format json
+	}
+}
+
+# 80 端口：仅用于 ACME HTTP-01 挑战 + http->https 跳转。
+# 显式声明后 Caddy 不再自动接管该 host 的明文业务流量，只做跳转。
+# （`caddy validate` 已验证此写法合法；ACME 挑战由 Caddy 在 HTTP server 层先行处理，
+#   不受本 handler 影响。）
+http://{$SITE_DOMAIN} {
+	redir https://{host}{uri} permanent
+}

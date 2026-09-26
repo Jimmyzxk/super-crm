@@ -1,0 +1,86 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: crm-postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_HOST_PORT:-127.0.0.1:54329}:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-salescrm}
+      POSTGRES_USER: ${POSTGRES_USER:-salescrm_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be defined in .env}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-salescrm_admin} -d ${POSTGRES_DB:-salescrm}"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - salescrm_pgdata:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: crm-web
+    restart: unless-stopped
+    ports:
+      - "${APP_HOST_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      NODE_OPTIONS: "--max-old-space-size=256"
+      DATABASE_URL: ${DATABASE_URL:-postgres://salescrm:${APP_DATABASE_PASSWORD}@postgres:5432/${POSTGRES_DB:-salescrm}}
+      MIGRATION_DATABASE_URL: ${MIGRATION_DATABASE_URL:-postgres://${POSTGRES_USER:-salescrm_admin}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-salescrm}}
+      APP_DATABASE_PASSWORD: ${APP_DATABASE_PASSWORD:?APP_DATABASE_PASSWORD must be defined in .env}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET (min 32 chars) must be defined in .env}
+      CRON_SECRET: ${CRON_SECRET:?CRON_SECRET must be defined in .env}
+      DEV_ADMIN_EMAIL: ${DEV_ADMIN_EMAIL:-admin@example.com}
+      DEV_ADMIN_PASSWORD: ${DEV_ADMIN_PASSWORD:-}
+      SEED_DEMO: ${SEED_DEMO:-false}
+      RUN_MIGRATIONS: ${RUN_MIGRATIONS:-true}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      AI_GATEWAY_ALLOW_HOSTS: ${AI_GATEWAY_ALLOW_HOSTS:-}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+
+  cron:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: crm-cron
+    restart: unless-stopped
+    command: ["node", "--no-warnings", "--experimental-strip-types", "scripts/cron-scheduler.ts"]
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      NODE_OPTIONS: "--max-old-space-size=64"
+      CRON_BASE_URL: http://app:3000
+      CRON_SECRET: ${CRON_SECRET:?CRON_SECRET must be defined in .env}
+      CRON_INTERVAL_MINUTES: ${CRON_INTERVAL_MINUTES:-5}
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep '[n]ode' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 96M
+
+volumes:
+  salescrm_pgdata:

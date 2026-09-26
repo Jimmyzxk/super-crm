@@ -1,0 +1,81 @@
+# ==============================================================================
+# 生产 TLS 入口 overlay —— 在 docker-compose.yml 之上叠加 Caddy 2 反向代理
+#
+# 用法（务必同时带上前一个 compose 文件）：
+#   SITE_DOMAIN=crm.example.com \
+#   SITE_TLS_MODE=ops@example.com \
+#   docker compose -f docker-compose.yml -f docker-compose.prod-tls.yml up -d
+#
+# 校验（不启动）：
+#   docker compose -f docker-compose.yml -f docker-compose.prod-tls.yml config
+#
+# 本 overlay 做三件事：
+#   1) 新增 caddy 服务：唯一对外暴露 80/443，TLS 终止后反代到 app:3000
+#   2) 把 app 的 3000 端口从"公网 0.0.0.0"改为"仅绑定 127.0.0.1"（!override 覆盖
+#      基线 ports 列表，避免出现双份映射），Caddy 走 compose 内网 app:3000
+#   3) 显式重申 app 的 NODE_ENV=production（session cookie secure 依赖它，
+#      见 src/core/auth/actions.ts:31）
+# ==============================================================================
+services:
+  caddy:
+    image: caddy:2
+    container_name: crm-caddy
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    # 证书与配置持久化：
+    #   /data 存 ACME 账号与证书（丢了会重新申请，不致命但会触发 CA 限频）
+    #   /config 存 Caddy 自动 HTTPS 的运行态
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      # ---- Caddyfile 占位符注入 ----
+      # 必填：公网域名（需已解析到本机公网 IP）
+      SITE_DOMAIN: ${SITE_DOMAIN:?SITE_DOMAIN must be defined (公网域名) in .env}
+      # 证书来源，一个变量两种取值：
+      #   internal        -> Caddy 本地 CA 自签（内网试用/预发）
+      #   ops@example.com -> 公网 ACME + 该邮箱的到期/吊销通知（生产推荐）
+      # 用 :- 保证 .env 里写成 `SITE_TLS_MODE=`（留空）时也会落成 internal，
+      # 因为 Caddyfile 的 {$VAR:default} 对"已设置为空串"不生效，会让 caddy 启动失败。
+      SITE_TLS_MODE: ${SITE_TLS_MODE:-internal}
+    ports:
+      # 443：HTTPS 业务入口
+      - "${TLS_HOST_PORT:-443}:443"
+      # 80：仅用于 ACME HTTP-01 挑战与 http->https 跳转
+      - "${TLS_HOST_PORT_HTTP:-80}:80"
+    # Caddy 需要写 /data 与 /config（ACME 账号/证书），root 起容器后由 Caddy 自身降权
+    cap_add:
+      - NET_BIND_SERVICE
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:2019/config/ >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+
+  app:
+    # 3000 不再暴露到公网。
+    # 基线 docker-compose.yml 里是 `${APP_HOST_PORT:-3000}:3000`（默认 0.0.0.0:3000）。
+    # 用 `!override` 整体替换该列表：compose 合并 `ports` 时默认是"追加"，
+    # 若只写一条新的会变成两条映射（3000 仍会出现在公网上），故必须用 !override 清掉。
+    # 绑定 127.0.0.1 保留本机 curl / 调试通路，同时对公网关闭。
+    # Caddy 与 app 同处 compose 默认网络，直接走 app:3000，不经过宿主机端口。
+    ports: !override
+      - "127.0.0.1:${APP_HOST_PORT:-3000}:3000"
+    # 显式声明容器内端口（仅文档作用；同网络内本就互通）
+    expose:
+      - "3000"
+    environment:
+      # session cookie 的 Secure 标记依赖它（src/core/auth/actions.ts:31、
+      # src/core/auth/session.ts:119），漏了会导致生产环境全员无法登录。
+      NODE_ENV: production
+
+volumes:
+  caddy_data:
+  caddy_config:
