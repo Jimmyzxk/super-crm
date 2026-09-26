@@ -178,7 +178,7 @@ describe("插件事实接口解耦验证 (插件缺席路径 / 开源版默认�
         "2026-09-09",
       );
 
-      expect(report.title).toContain("商脉AI 晨会智能巡检战报");
+      expect(report.title).toContain("Super CRM 晨会智能巡检战报");
       expect(report.markdownContent).toContain("停滞与高风险商机");
       expect(report.markdownContent).not.toContain("临期合同");
       expect(report.markdownContent).not.toContain("逾期未回款账单");

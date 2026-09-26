@@ -12,7 +12,7 @@ import SettingsHubClient from "./SettingsHubClient";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "系统配置 - 商脉AI CRM",
+  title: "系统配置 - Super CRM",
   description: "统一维护企业数据安全策略、公海流转规则、客户协同与防撞单、AI 智能评分引擎、开放接口与扩展应用生态",
 };
 

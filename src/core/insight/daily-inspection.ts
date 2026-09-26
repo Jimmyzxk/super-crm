@@ -117,7 +117,7 @@ export function buildDailyInspectionReport(
   sections.push(`> **AI 行动建议**：${suggestionText}`);
 
   return {
-    title: `商脉AI 晨会智能巡检战报 (${todayStr})`,
+    title: `Super CRM 晨会智能巡检战报 (${todayStr})`,
     markdownContent: sections.join("\n\n"),
   };
 }
@@ -469,7 +469,7 @@ export async function runDailyAiInspectionService(
                   tenant_id, user_id, type, title, body, link, created_at
                 ) values (
                   ${tenantId}::uuid, ${adminCtx.userId}::uuid, 'TASK_DUE_SOON'::notification_type,
-                  ${`【群播已发送】商脉AI 晨会智能巡检战报 (${todayStr})`},
+                  ${`【群播已发送】Super CRM 晨会智能巡检战报 (${todayStr})`},
                   ${`已于 ${todayStr} 向已配置的企业通讯群机器人推送每日晨会巡检战报。`},
                   null,
                   ${now.toISOString()}::timestamptz

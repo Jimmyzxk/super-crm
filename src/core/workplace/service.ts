@@ -427,8 +427,8 @@ export async function testWorkplaceIntegrationService(
   if (!target) throw new Error("未找到指定的通讯机器人集成");
 
   const testMsg: WorkplacePushMessage = {
-    title: "商脉AI CRM · 连通性测试",
-    markdownContent: `> **测试状态**：连接成功\n> **租户 ID**：\`${tenant.tenantId}\`\n> **触发时间**：${new Date().toLocaleString("zh-CN")}\n\n本群已成功接入商脉AI CRM 实时战报与出网 Webhook 引擎，后续将自动推送核心商业事件与 AI 巡检战报。`,
+    title: "Super CRM · 连通性测试",
+    markdownContent: `> **测试状态**：连接成功\n> **租户 ID**：\`${tenant.tenantId}\`\n> **触发时间**：${new Date().toLocaleString("zh-CN")}\n\n本群已成功接入Super CRM 实时战报与出网 Webhook 引擎，后续将自动推送核心商业事件与 AI 巡检战报。`,
     event: "DEAL_WON",
     data: { test: true, triggeredAt: new Date().toISOString() },
   };

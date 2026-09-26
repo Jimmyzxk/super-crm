@@ -1,7 +1,6 @@
 # 领域模型与数据字典
 
 版本：v1.0 · 2026-08-11
-从属于：[00-SCOPE-CONTRACT.md](./00-SCOPE-CONTRACT.md)
 
 ---
 
@@ -18,7 +17,6 @@
 > | 文档中描述的插件架构与契约 | **作为架构资料保留**（这是插件框架的设计依据），但开源版运行时不会有任何插件被装配 |
 >
 > 框架在插件缺席时的降级语义：导航不出现幽灵入口、详情页挂载点与设置分区渲染为空、AI 工具与晨检报告的插件事实段落为空（见 `tests/integration/oss-core-plugin-framework-integrity.test.ts` 与 `tests/integration/plugin-facts-provider.test.ts`）。
-
 
 ## 1. 对象关系
 
@@ -50,7 +48,7 @@ Tenant（租户）
 | Lead → Customer 必须人工确认 | 自动转会把垃圾数据变成客户 |
 | Opportunity 必须挂 Customer | 线索还没确认价值，直接建商机会污染数据 |
 | 一个 Customer 可以有多个 Opportunity | 今年买设备明年买服务是两笔生意 |
-| **不做四层身份归一** | 上个项目做了 Lead→Person→Contact→Customer + 合并冲突队列，对 V1 过重 |
+| **不做四层身份归一** | 业界实践做了 Lead→Person→Contact→Customer + 合并冲突队列，对 V1 过重 |
 
 ### 1.2 三个业务池是事实边界
 
@@ -874,7 +872,7 @@ JWT 中的 `tenantId` 只用于建立查询上下文，**不能单独作为授�
 
 ## 6. 明确不建的表
 
-对照 [00 范围契约](./00-SCOPE-CONTRACT.md) 第 4 节：
+对照 [产品概览](./01-PRODUCT-OVERVIEW.md) 第 4 节：
 
 - 营销活动 / 渠道 / 归因
 - 公海规则 / 划转记录 / 抢单

@@ -7,7 +7,7 @@ import { listRolesService, listUserRoleAssignmentsService } from "@/core/roles/s
 import TeamManagementClient from "./TeamManagementClient";
 
 export const metadata = {
-  title: "团队管理 - 商脉AI CRM",
+  title: "团队管理 - Super CRM",
   description: "企业团队组织架构、员工花名册与角色权限体系，支持企业微信/钉钉通讯录同步",
 };
 

@@ -376,7 +376,7 @@ export async function generateObjectionKillerService(
 ): Promise<ObjectionKillerScript> {
   const { objectionType, competitorName, targetName, productName } = input;
   const name = targetName || "客户";
-  const product = productName || "商脉AI CRM 商业数字化方案";
+  const product = productName || "企业销售管理方案";
   const comp = competitorName || "竞品厂商";
 
   const templates: Record<ObjectionType, ObjectionKillerScript> = {
@@ -650,7 +650,7 @@ export async function generateLeadOutreachPitchService(
     const tenantRes = await tx.execute<{ name: string }>(sql`
       select name from public.tenants where id = ${tenant.tenantId}::uuid
     `);
-    const tenantName = tenantRes.rows[0]?.name || "商脉科技";
+    const tenantName = tenantRes.rows[0]?.name || "本企业";
 
     // 横向越权防护：他人线索不可生成话术（话术生成本身消耗 LLM 配额）
     if (tenant.role === "SALES" && lead.owner_user_id && lead.owner_user_id !== tenant.userId) {

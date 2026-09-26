@@ -1,7 +1,7 @@
 # 功能规格：线索管理
 
 版本：v1.0 · 2026-08-11
-从属于：[00-SCOPE-CONTRACT.md](./00-SCOPE-CONTRACT.md) · 场景依据：[02-USERS-AND-SCENARIOS.md](./02-USERS-AND-SCENARIOS.md)
+场景依据：[02-USERS-AND-SCENARIOS.md](./02-USERS-AND-SCENARIOS.md)
 
 ---
 
@@ -34,7 +34,7 @@
 
 ### 2.2 V1 不做四层身份归一
 
-上一个项目做了 Lead → Person → Contact → Customer 四层归一 + 合并冲突队列。设计是对的，但对 V1 过重。
+业界常见的做法是 Lead → Person → Contact → Customer 四层归一 + 合并冲突队列。设计是对的，但对 V1 过重。
 
 **V1 简化为**：手机号查重 + 人工确认。见第 4 节。
 

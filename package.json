@@ -21,6 +21,7 @@
     "db:seed": "tsx scripts/seed-dev.ts",
     "cron": "tsx scripts/cron-scheduler.ts",
     "db:seed:acceptance": "tsx scripts/seed-acceptance.ts",
+    "db:seed:demo": "tsx scripts/seed-demo-core.ts",
     "capacity:generate": "tsx scripts/generate-capacity-data.ts",
     "capacity:benchmark": "tsx scripts/benchmark-pools.ts",
     "docker:dev": "docker compose -f docker-compose.dev.yml up -d",

@@ -1,7 +1,7 @@
 # 功能规格：设置与权限
 
 版本：v1.0 · 2026-08-11
-从属于：[00-SCOPE-CONTRACT.md](./00-SCOPE-CONTRACT.md) · 场景依据：[02-USERS-AND-SCENARIOS.md](./02-USERS-AND-SCENARIOS.md)
+场景依据：[02-USERS-AND-SCENARIOS.md](./02-USERS-AND-SCENARIOS.md)
 
 ---
 

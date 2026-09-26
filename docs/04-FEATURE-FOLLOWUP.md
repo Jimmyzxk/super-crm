@@ -1,7 +1,7 @@
 # 功能规格：跟进与任务
 
 版本：v1.0 · 2026-08-11
-从属于：[00-SCOPE-CONTRACT.md](./00-SCOPE-CONTRACT.md) · 场景依据：[02-USERS-AND-SCENARIOS.md](./02-USERS-AND-SCENARIOS.md)
+场景依据：[02-USERS-AND-SCENARIOS.md](./02-USERS-AND-SCENARIOS.md)
 
 ---
 
@@ -18,7 +18,7 @@
 
 ## 2. 设计红线
 
-这个模块最容易做砸。上一个项目的教训：
+这个模块最容易做砸。常见的失败模式：
 
 | 红线 | 反例 |
 |---|---|

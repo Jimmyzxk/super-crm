@@ -31,7 +31,7 @@ export default function LoginPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
             </div>
-            <h1 className="text-xl font-bold tracking-tight text-slate-950">商脉AI CRM</h1>
+            <h1 className="text-xl font-bold tracking-tight text-slate-950">Super CRM</h1>
             <span className="rounded bg-blue-50 border border-blue-200 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">PRO</span>
           </div>
           <p className="text-xs text-slate-500">企业级数智化销售管理与全生命周期营收中枢</p>

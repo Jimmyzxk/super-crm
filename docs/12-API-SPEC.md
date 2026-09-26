@@ -1,7 +1,6 @@
 # 接口规格
 
 版本：v1.0 · 2026-08-11
-从属于：[00-SCOPE-CONTRACT.md](./00-SCOPE-CONTRACT.md)
 
 ---
 
@@ -18,7 +17,6 @@
 > | 文档中描述的插件架构与契约 | **作为架构资料保留**（这是插件框架的设计依据），但开源版运行时不会有任何插件被装配 |
 >
 > 框架在插件缺席时的降级语义：导航不出现幽灵入口、详情页挂载点与设置分区渲染为空、AI 工具与晨检报告的插件事实段落为空（见 `tests/integration/oss-core-plugin-framework-integrity.test.ts` 与 `tests/integration/plugin-facts-provider.test.ts`）。
-
 
 ## 1. 风格约定
 
@@ -70,7 +68,7 @@ type PageOutput<T> = { items: T[]; nextCursor: string | null }
 
 游标 = `base64(sortKey + '|' + id)`；`sortKey` 是当前排序字段的规范化值，和 `id` 一起组成稳定边界。切换 `sort` 或筛选条件后必须丢弃旧游标，不能跨查询复用。
 
-> 上个项目踩过的坑：PostgreSQL 微秒时间戳与 JavaScript 毫秒时间戳精度不一致，导致游标分页出现重复行。**游标必须带 id 做二级排序。**
+> 业界实践踩过的坑：PostgreSQL 微秒时间戳与 JavaScript 毫秒时间戳精度不一致，导致游标分页出现重复行。**游标必须带 id 做二级排序。**
 
 ### 2.4 幂等
 
@@ -559,5 +557,4 @@ V1 **不实现事件总线**。表单 Handler 已经同步拿到 `ctx.core.creat
 | `POST /api/public/plugins/form-capture/:formId/submit` | 表单提交 |
 | `POST /api/v1/leads` | 外部 API 进线 |
 
-
-**合计 49 个 Action + 3 个 Route Handler。** 加接口要走 [00 范围契约](./00-SCOPE-CONTRACT.md) 第 6 节。
+**合计 49 个 Action + 3 个 Route Handler。** 加接口要走 [产品概览](./01-PRODUCT-OVERVIEW.md) 第 6 节。

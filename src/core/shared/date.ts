@@ -57,7 +57,17 @@ export function addShanghaiDays(days: number, fromDate: Date = new Date()): stri
   return localDateValue(new Date(fromDate.getTime() + days * 86400000));
 }
 
+/**
+ * 格式化为 MM/DD。接受两种输入：
+ * - 纯日期 `YYYY-MM-DD`：直接取月日（无时区语义，不应做时区换算）
+ * - 完整时间戳（含 T 或时区偏移）：按业务时区折算到当地日期再取月日。
+ *   若不做折算，UTC 时间戳在上海凌晨会被显示成前一天（如 17:36Z 应为次日）。
+ */
 export function formatDateOnly(value: string): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  const pureDate = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (pureDate) return `${pureDate[2]}/${pureDate[3]}`;
+
+  const dateOnly = localDateValue(value);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateOnly);
   return match ? `${match[2]}/${match[3]}` : value;
 }
