@@ -16,6 +16,7 @@
     "test": "tsx scripts/prepare-test-db.ts && vitest run",
     "test:unit": "vitest run tests/unit",
     "test:integration": "tsx scripts/prepare-test-db.ts && vitest run tests/integration",
+    "db:test:reset": "tsx scripts/reset-test-db.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:seed": "tsx scripts/seed-dev.ts",

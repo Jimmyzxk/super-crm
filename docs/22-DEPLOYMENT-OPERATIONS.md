@@ -168,6 +168,31 @@ curl -X POST http://localhost:3000/api/cron/ai-daily-inspection \
 
 > `docker-compose*.yml` 已内置 `cron` 服务（`command: node --experimental-strip-types scripts/cron-scheduler.ts`，`depends_on: app:healthy`，`CRON_BASE_URL=http://app:3000` 容器内网络）。若使用外部触发，可 `docker compose stop cron` 停内置调度器，避免重复执行（重复由 `(task_id,type)` 唯一约束 + `SKIP LOCKED` 兜底，但仍建议单源调度）。
 
+### 4.3 调度器健康检查
+
+定时任务失效是**静默故障**：任务没跑不会报错，业务规则（公海回收、超时提醒、AI 巡检）只是不再生效，没有任何外部信号。因此调度器提供心跳机制供健康检查使用。
+
+**机制**：调度器每轮调用完 3 个端点后，只有**全部成功**才写心跳文件（默认 `/tmp/cron-last-success`，内容为成功时刻的 epoch 秒）。任一任务失败则不刷新心跳——这样「连续失败」会表现为心跳过期。
+
+**判据**：`scripts/cron-healthcheck.ts` 读取心跳，若距上次成功超过「2 × 调度间隔 + 60 秒」则报告不健康并输出可读原因。
+
+```bash
+# 手动执行（与容器 healthcheck 同一脚本）
+CRON_HEARTBEAT_FILE=/tmp/cron-last-success CRON_INTERVAL_MINUTES=5 \
+  node --no-warnings --experimental-strip-types scripts/cron-healthcheck.ts
+```
+
+退出码：`0` 健康 / `1` 不健康（原因输出到 stderr，`docker compose ps` 会显示为 `unhealthy`）。
+
+**为什么不检测「进程是否存在」**：进程存活但任务连续失败（应用未就绪、密钥不匹配、端点报错）时，进程判据仍报健康——而这恰恰是最需要告警的状态。
+
+**相关环境变量**：
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `CRON_HEARTBEAT_FILE` | `/tmp/cron-last-success` | 心跳文件路径，调度器与健康检查需一致 |
+| `CRON_INTERVAL_MINUTES` | `5` | 调度间隔，决定健康检查的容忍窗口 |
+
 ---
 
 ## 5. 备份与恢复
@@ -359,16 +384,74 @@ curl -s http://localhost:3000/api/health | jq .
 | `AI_GATEWAY_ALLOW_HOSTS` 配后仍 `SSRF Protection` 拦截 | 白名单格式不符或含空格/尾点未标准化 | 按 `.env.example:78` 格式 `llm-gateway.internal:8080,llm-gateway.internal`（逗号分隔、无协议、无路径）；`docker compose exec app node -e "console.log(process.env.AI_GATEWAY_ALLOW_HOSTS)"` 验证 |
 | Docker 持续占用大量 CPU | 容器内存配额之和逼近 Docker VM 上限，VM 反复换页；表现为 CPU 飙高而非 OOM，容易误判为 CPU 问题 | ①核对 Docker Desktop 的 Memory 上限与各容器 `deploy.resources.limits.memory` 之和，留出余量；②`docker ps` 停掉非必需容器（跑测试只需 postgres）；③`docker builder prune -f` 回收构建缓存；④如确需更大 app 内存，先上调 VM 上限再改容器配额 |
 
-> 兜底自检：`pnpm typecheck && pnpm lint && pnpm test`（开源版 77 文件 / 545 用例）是提交前门禁；分层门禁 `scripts/check-layer-boundary.ts` 由 `pnpm lint` 前置执行（`core`/`lib` 既不引 `@/plugins`，也不出现任何 `plugin_*` 业务插件表字样）。
+> 兜底自检：`pnpm typecheck && pnpm lint && pnpm test`（开源版 78 个测试文件 / 550 条用例）是提交前门禁；分层门禁 `scripts/check-layer-boundary.ts` 由 `pnpm lint` 前置执行（`core`/`lib` 既不引 `@/plugins`，也不出现任何 `plugin_*` 业务插件表字样）。
 >
 > **开源版说明（AGPL-3.0）**：本仓库为「主代码开源 + 业务插件闭源」发行版。`src/plugin-kit/`（插件框架：`PluginDefinition` 契约、`registry` 装配点、挂载点、启停与限流基础设施）完整保留，`src/plugins/` 与其数据表不在本仓库；框架当前为空装配（`compiledPlugins = []`），上游调用点（侧边栏导航 / 线索与商机详情挂载 / 设置页分区）自动降级为不渲染。
 
 ---
 
-## 8. CI 门禁（GitHub Actions）
+## 8. 监控与告警
 
-> **2026-09-26 新增**：仓库此前**完全没有 CI**（`.github/` 不存在），上述门禁全靠人工执行。
-> 现由 `.github/workflows/ci.yml` 在 **push 与 pull_request** 时自动执行完整门禁。
+> **当前状态**：仓库提供健康检查端点与容器健康探针，**不含**内置监控系统、指标导出或告警平台集成。以下说明可用的观测点，以及生产部署建议自行接入的内容。
+
+### 8.1 可用观测点
+
+| 观测点 | 位置 | 判据 |
+|---|---|---|
+| 应用健康 | `GET /api/health` | 返回 200 且 `db: "ok"` 为正常；数据库不可达时返回 503 |
+| 应用容器健康 | `docker compose ps` | compose 已配置基于 `/api/health` 的探针 |
+| 调度器健康 | 同上 | 基于心跳文件新鲜度（见 4.3 调度器健康检查），任务连续失败会转为 unhealthy |
+| 容器日志 | `docker compose logs <service>` | 应用、调度器、Caddy 均输出到 stdout |
+| 备份结果 | `~/crm-backup.log` 与 `~/crm-backup-alert.txt` | 失败写 `[ALERT]` 行并生成告警文件 |
+| 审计日志 | `audit_logs` 表 | 关键业务动作留痕，可按租户与时间检索 |
+
+### 8.2 建议监控的指标
+
+自建监控时，以下指标最能反映真实故障（按优先级）：
+
+| 指标 | 为什么重要 | 建议阈值 |
+|---|---|---|
+| `/api/health` 连续失败 | 应用或数据库不可用的最直接信号 | 2 分钟内 2 次失败即告警 |
+| 调度器心跳时间戳 | 定时任务静默失效不会产生任何报错，只能靠心跳发现 | 超过 `2×调度间隔 + 60 秒` 即告警 |
+| 备份产物时间戳 | 备份失败同样静默 | 最新备份超过 2 小时未更新即告警 |
+| 数据库连接数 | 连接池耗尽会让所有请求排队 | 接近 `max_connections` 的 80% |
+| 容器重启次数 | 频繁重启通常意味着 OOM 或崩溃循环 | 10 分钟内 > 2 次 |
+| 磁盘使用率 | 日志与备份持续增长 | 超过 85% |
+
+### 8.3 日志
+
+应用使用 `console` 输出，未引入结构化日志库：
+
+- 容器日志由 Docker 收集，默认无大小上限。**长期运行需配置轮转**，否则会占满磁盘：
+
+```yaml
+services:
+  app:
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+```
+
+- Caddy 访问日志为 JSON 格式，同样遵循上述轮转配置。
+- 应用日志中不包含客户业务数据与凭据；审计信息写入 `audit_logs` 表而非日志。
+
+### 8.4 尚不包含的能力
+
+如需以下能力，需自行集成或二次开发：
+
+- 指标导出（Prometheus / OpenTelemetry 端点）
+- 分布式追踪
+- 错误聚合与上报（如 Sentry）
+- 内置告警通道（邮件 / Webhook / 短信）
+- 日志聚合与检索（如 Loki / ELK）
+
+---
+
+## 9. CI 门禁（GitHub Actions）
+
+> `.github/workflows/ci.yml` 在 **push 与 pull_request** 时自动执行完整门禁，无需人工触发。
 
 ### 8.1 触发与流水线
 
@@ -461,7 +544,7 @@ env NODE_ENV=production pnpm build  # 5
 
 **开源版（AGPL-3.0）实测结果**（剥离 7 个闭源业务插件后重跑，2026-09-26）：
 `pnpm install --frozen-lockfile` / `pnpm typecheck` / `pnpm lint` / `pnpm test` / `NODE_ENV=production pnpm build` 5 步退出码全 `0`；
-`Test Files 77 passed (77)` / `Tests 545 passed (545)`（零 skip）；lint `0 errors, 9 warnings`（全部为剥离前既有告警）；`✓ Compiled successfully`。
+`Test Files 78 passed (78)` / `Tests 550 passed (550)`（零 skip）；lint `0 errors, 9 warnings`；`✓ Compiled successfully`。
 
 ### 8.5 本地修改工作流时
 
@@ -480,7 +563,7 @@ actionlint .github/workflows/ci.yml
 
 ---
 
-## 9. TLS 与 HTTPS 入口（Caddy 2）
+## 10. TLS 与 HTTPS 入口（Caddy 2）
 
 > **2026-09-26 新增**。解决**上线硬阻断**：生产 HTTP 下浏览器拒收 session cookie。
 > `src/core/auth/actions.ts:31` 与 `src/core/auth/session.ts:119` 均为

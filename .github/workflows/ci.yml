@@ -9,7 +9,7 @@
 #   插件框架（src/plugin-kit）与 plugin_registry / plugin_rate_limits 两张基础设施表
 #   均在仓内并被门禁覆盖；7 个业务插件（bi / contracts / form-capture / knowledge-base /
 #   lead-routing / orders / projects）的实现与数据表不在仓内，因此集成测试文件数与用例数
-#   少于闭源版（当前 42 个集成测试文件 / 77 个测试文件 / 545 个用例，零 skip）。
+#   少于闭源版（当前 42 个集成测试文件 / 78 个测试文件 / 550 条用例，零 skip）。
 #
 # 关键事实（来源：scripts/prepare-test-db.ts、scripts/migrate.ts、vitest.config.ts）
 #   - `pnpm test` = `tsx scripts/prepare-test-db.ts && vitest run`
@@ -68,10 +68,10 @@ jobs:
       # 但 prepare-test-db.ts 在 spawn `pnpm db:migrate` 时会用 TEST_MIGRATION_DATABASE_URL
       # 覆盖它，故此处无需（也不应）指向测试库。
       #
-      # ⚠️ 必须保持与测试库不同的库名：30 个集成测试文件顶部都有守卫
+      # ⚠️ 必须保持与测试库不同的库名：31 个集成测试文件顶部有 pathname 守卫
       # `new URL(TEST_MIGRATION_DATABASE_URL).pathname !== new URL(MIGRATION_DATABASE_URL).pathname`
       # （如 tests/integration/stage-zero.test.ts:15），相等即抛
-      # "Integration tests must not use the development database" 导致这 30 个文件失败。
+      # "Integration tests must not use the development database" 导致这些文件失败。
       # CI 中不存在开发库，此处的 salescrm 仅用于满足该 pathname 断言，永不会被连接
       # （每个集成测试文件在校验后立刻把它覆盖为测试库）。
       MIGRATION_DATABASE_URL: postgres://salescrm_admin:ci_admin_pw@localhost:5432/salescrm

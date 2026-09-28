@@ -68,7 +68,7 @@ type PageOutput<T> = { items: T[]; nextCursor: string | null }
 
 游标 = `base64(sortKey + '|' + id)`；`sortKey` 是当前排序字段的规范化值，和 `id` 一起组成稳定边界。切换 `sort` 或筛选条件后必须丢弃旧游标，不能跨查询复用。
 
-> 业界实践踩过的坑：PostgreSQL 微秒时间戳与 JavaScript 毫秒时间戳精度不一致，导致游标分页出现重复行。**游标必须带 id 做二级排序。**
+> 业界实践中已确认的问题：PostgreSQL 微秒时间戳与 JavaScript 毫秒时间戳精度不一致，导致游标分页出现重复行。**游标必须带 id 做二级排序。**
 
 ### 2.4 幂等
 
