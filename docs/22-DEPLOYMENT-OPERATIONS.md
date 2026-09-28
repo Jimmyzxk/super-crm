@@ -172,18 +172,17 @@ curl -X POST http://localhost:3000/api/cron/ai-daily-inspection \
 
 ## 5. 备份与恢复
 
-### 5.1 备份脚本机制（`scripts/backup-db.sh` 仓库正本 / `$HOME/bin/crm-backup.sh` cron 抄本）
+### 5.1 备份脚本机制
 
-> ⚠️ **2026-09-26 更新**：两版脚本已加入**失败告警三件套**（见 5.1.1）与**离机镜像**（见 5.1.2）。
-> 起因是实测教训：脚本曾连续失败 12 小时无人发现（Docker Desktop 未自启 → `pg_dump` 连不上），
-> 旧版失败时只往日志写一行就 `exit 1`。
+> **设计前提**：备份失败必须能被发现。只写日志、无人查看的备份等于没有备份——
+> 因此脚本设计了失败告警三件套（见 5.1.1）与离机镜像（见 5.1.2）。
 
 | 项目 | 实现 |
 |---|---|
 | 路径 | `SCRIPT_DIR/../backups` 自解析（`cron/launchd` 下 CWD 不可靠）；`PATH` 补齐 `/usr/local/bin:/opt/homebrew/bin:/Applications/Docker.app/...` |
-| 补跑守卫 | cron 抄本 `FRESH_HOURS=1`（契合 RPO≤1h）；仓库正本默认 `20h`（人工/低频执行）。两者均可用 `CRM_BACKUP_FRESH_HOURS` 覆盖 |
+| 补跑守卫 | 默认 `FRESH_HOURS=1`（每小时调度时，1 小时内已有新份则跳过，契合 RPO ≤1h）；可用 `CRM_BACKUP_FRESH_HOURS` 覆盖。按分钟比较并留 10% 抖动余量——cron 在整点 :17 触发时两次执行间隔常略小于 1 小时，用小时取整会误判为「太新」而每小时都跳过 |
 | 命名 | `salescrm_YYYYMMDD_HHMM.sql.gz`，先写 `.tmp_salescrm_*.sql.gz` |
-| 转储 | `docker exec $PG_CONTAINER pg_dump -U salescrm_admin salescrm \| gzip > TMP_FILE`（`set -euo pipefail` 任一环节失败即非零退出并清理临时文件） |
+| 转储 | `docker exec "$PG_CONTAINER" pg_dump -U salescrm_admin salescrm \| gzip > TMP_FILE`（`set -euo pipefail` 保证任一环节失败即非零退出并清理临时文件；容器名可用 `CRM_BACKUP_PG_CONTAINER` 覆盖） |
 | 校验 | `gzip -t TMP_FILE` 完整性校验，未通过则拒绝更名 |
 | 原子更名 | 校验通过后 `mv TMP_FILE BACKUP_FILE` 才暴露为正式备份 |
 | 轮转 | 仅在新份存在后执行：`ls -tp salescrm_*.sql.gz \| tail -n +15 \| xargs rm` 保留最新 14 份（`grep -v '/$'` 排除目录） |
@@ -207,18 +206,16 @@ curl -X POST http://localhost:3000/api/cron/ai-daily-inspection \
 | ② 告警文件 | 覆盖写 `~/crm-backup-alert.txt`（含时间戳、原因、主机、处置建议 3 步） | ✅ 可靠。恢复成功后自动删除 |
 | ③ 系统通知 | `osascript -e 'display notification ... with title "CRM 备份告警"'` | ⚠️ **退出码 0、无 stderr、不挂起，但横幅默认不显示**（详见下方实测） |
 
-**恢复语义：** 下一次成功时若 `~/crm-backup-alert.txt` 存在 → 发"已恢复"通知 → 写 `RECOVERED:` 日志行 → 删除 alert 文件。
-（真实 cron 于 12:17 自动完成过一次恢复：检测到 12:16 的告警态 → 备份成功 → 写 `RECOVERED` → 清 alert。）
+**恢复语义：** 下一次成功时若告警文件存在 → 写 `RECOVERED:` 日志行 → 发恢复通知 → 删除告警文件。
 
-**③ 系统通知的实测结论（务必读）：**
+**③ 系统通知的已知行为（macOS）**
 
-- ✅ 在**真实 cron 上下文**里 `osascript -e 'display notification ...'` **退出码 0、stderr 为空、不会挂起**——TCC 没有拦截通知本身。
-- ❌ 但**横幅不会出现在屏幕上**。三重证据：
-  1. `screencapture` 连拍 6 帧通知时刻，**无横幅**；
-  2. **对照组**：`osascript -e 'display dialog ...'` 的模态框**能被拍到**——证明截图能捕捉瞬态 UI，不是截图方式的问题；
-  3. 通知中心数据库 `~/Library/Group Containers/group.com.apple.usernoted/db2/db` 中 `com.apple.scripteditor2`（`osascript` 的责任进程）的记录为 `delivered_date` 非空但 `presented=0`。
-- ⚠️ **另一个更危险的发现**：`osascript -e 'tell application "System Events" ...'` 在 cron 上下文会**永久挂起**（TCC Automation 授权弹窗在无 GUI 会话下无法应答，实测进程 `etime` 持续增长）。若通知调用能挂住，cron 任务就永远跑不完 → **备份直接停摆，比不告警更糟**。因此 `send_notification()` 用「后台子 shell + 硬超时（默认 10s，`CRM_BACKUP_NOTIFY_TIMEOUT` 可调）」实现，超时返回 124 并降级。
-- **一次性人工动作**：想让横幅真正弹出，需在 **系统设置 → 通知 → 脚本编辑器** 把提醒样式改为「横幅」。未做之前，**请以 `~/crm-backup-alert.txt` 为准**，它是最可靠通道。
+- `osascript -e 'display notification ...'` 在 cron 上下文返回 0、无 stderr、不挂起——TCC 不拦截通知调用本身。
+- 但**横幅默认不显示**：macOS 对脚本类进程的默认提醒样式为「无」，需在**系统设置 → 通知 → 脚本编辑器**中手动改为「横幅」或「提醒」后才会出现。
+- 因此脚本不把系统通知作为可靠通道：**告警文件与日志是权威来源**，通知仅作辅助提示。
+
+> ⚠️ **不要用 `osascript -e 'tell application "System Events" ...'` 发通知。** 该形式在 cron 上下文中会因 TCC Automation 授权弹窗无法应答而**永久挂起**——后台会话没有 GUI 可点授权，导致任务永远跑不完，备份直接停摆，比不告警更糟。
+> 脚本内的 `send_notification()` 采用「后台子 shell + 硬超时」（默认 10 秒，可用 `CRM_BACKUP_NOTIFY_TIMEOUT` 调整），超时即降级，不阻塞主流程。
 
 #### 5.1.2 离机镜像（保留 7 份）
 
@@ -249,7 +246,7 @@ curl -X POST http://localhost:3000/api/cron/ai-daily-inspection \
 - 需保证机器在 03:00 处于唤醒状态，否则当日无备份（无补跑）。
 - 同理**不要**加输出重定向。
 
-> ⚠️ **macOS TCC 实测限制**：macOS 的 cron 派生进程**无法访问可移动卷**（后台派生进程被透明拦截，实测 67 个整点窗口零执行，连写日志都不行）。因此若把仓库放在外置盘（`/Volumes/<外部卷>/...`）并让 cron 直接调用仓库内脚本，备份会**静默失败**。
+> ⚠️ **macOS TCC 限制**：macOS 的 cron 派生进程**无法访问可移动卷**——后台进程对 `/Volumes/<外部卷>` 的访问被系统静默拦截，连写日志都会失败，因此不会留下任何错误痕迹。若把仓库放在外置盘并让 cron 直接调用仓库内脚本，备份会**静默失败**。
 > **处置**：把 `backup-db.sh` 复制到主目录下的路径（如 `$HOME/bin/crm-backup.sh`）由 cron 调用该副本——只触碰主目录与 docker，备份落 `~/crm-backups/`、日志 `~/crm-backup.log`；仓库内脚本保留为手动执行入口。
 > 该限制也会使 cron 版备份的**离机镜像被跳过**（见 5.1.2）；但**告警通道不受影响**（alert 文件与日志都在主目录）。若需要真正的离机备份，须改用 `launchd`（不受该 TCC 路径限制）或为 cron 授予完全磁盘访问权限。
 
@@ -360,7 +357,7 @@ curl -s http://localhost:3000/api/health | jq .
 | `gzip: invalid compressed data` / `gzip -t 未通过` | 备份被截断或磁盘满 | `rm -f .tmp_*.sql.gz`；`df -h` 查空间；`docker system prune` 清理后重跑 `./scripts/backup-db.sh` |
 | `ENCRYPTION_KEY` 未设导致三方密钥解密异常 | 生产未配主密钥 | 设 32 字符 `ENCRYPTION_KEY` 并重建容器；未设时代码从 `SESSION_SECRET` 派生，仅开发可用 |
 | `AI_GATEWAY_ALLOW_HOSTS` 配后仍 `SSRF Protection` 拦截 | 白名单格式不符或含空格/尾点未标准化 | 按 `.env.example:78` 格式 `llm-gateway.internal:8080,llm-gateway.internal`（逗号分隔、无协议、无路径）；`docker compose exec app node -e "console.log(process.env.AI_GATEWAY_ALLOW_HOSTS)"` 验证 |
-| Docker 持续吃满 CPU（实测 `Virtualization.framework` 进程 95%）、风扇狂转 | Docker VM 内存被容器配额打满，VM 反复换页。本机 Docker Desktop 仅分配 2GB（`~/Library/Group Containers/group.com.docker/settings-store.json` 的 `MemoryMiB=2048`），而 dev 栈原配额 app 1024M + postgres 256M + cron 96M 已逼近上限 | ①`docker ps` 找出非必需容器（`crm-web-dev`/`crm-cron-dev` 对跑测试无用，测试只依赖 postgres）并 `docker stop`；②`docker builder prune -f`（实测可回收数 GB）；③已在 `docker-compose.dev.yml` 把 app 配额降到 768M、`NODE_OPTIONS` 降至 640M 留出余量；④如确需更大 app 内存，先上调 Docker Desktop 的 Memory 上限再改容器配额，切勿让容器配额之和逼近 VM 上限 |
+| Docker 持续占用大量 CPU | 容器内存配额之和逼近 Docker VM 上限，VM 反复换页；表现为 CPU 飙高而非 OOM，容易误判为 CPU 问题 | ①核对 Docker Desktop 的 Memory 上限与各容器 `deploy.resources.limits.memory` 之和，留出余量；②`docker ps` 停掉非必需容器（跑测试只需 postgres）；③`docker builder prune -f` 回收构建缓存；④如确需更大 app 内存，先上调 VM 上限再改容器配额 |
 
 > 兜底自检：`pnpm typecheck && pnpm lint && pnpm test`（开源版 77 文件 / 545 用例）是提交前门禁；分层门禁 `scripts/check-layer-boundary.ts` 由 `pnpm lint` 前置执行（`core`/`lib` 既不引 `@/plugins`，也不出现任何 `plugin_*` 业务插件表字样）。
 >
@@ -403,7 +400,7 @@ curl -s http://localhost:3000/api/health | jq .
 - `POSTGRES_USER=salescrm_admin`、`POSTGRES_PASSWORD=ci_admin_pw`、`POSTGRES_DB=salescrm_test`、
   `POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256`。
 - `vitest.config.ts` 已设 `fileParallelism: false`（串行），workflow 无需额外并发配置。
-- 库不存在时 `prepare-test-db.ts` 自动 `CREATE DATABASE` 并跑 `pnpm db:migrate`（本机已实测该分支）。
+- 库不存在时 `prepare-test-db.ts` 自动 `CREATE DATABASE` 并跑 `pnpm db:migrate`（该分支已由自动化测试覆盖）。
 
 **4 个测试环境变量（缺一即失败）：**
 
@@ -414,7 +411,7 @@ curl -s http://localhost:3000/api/health | jq .
 | `MIGRATION_DATABASE_URL` | `postgres://salescrm_admin:ci_admin_pw@localhost:5432/**salescrm**` | ⚠️ **故意不指向测试库**，见下 |
 | `APP_DATABASE_PASSWORD` | `ci_app_pw` | `scripts/migrate.ts` 用它创建/更新 `salescrm` 角色密码 |
 
-> ⚠️ **`MIGRATION_DATABASE_URL` 必须与测试库不同名**（W13-1 实测踩坑）：
+> ⚠️ **`MIGRATION_DATABASE_URL` 必须与测试库不同名**：
 > 55 个集成测试文件顶部都有守卫
 > `new URL(TEST_MIGRATION_DATABASE_URL).pathname !== new URL(MIGRATION_DATABASE_URL).pathname`
 > （如 `tests/integration/stage-zero.test.ts:15`），相等即抛
@@ -422,7 +419,7 @@ curl -s http://localhost:3000/api/health | jq .
 > `prepare-test-db.ts` 在 spawn `pnpm db:migrate` 时会用 `TEST_MIGRATION_DATABASE_URL` 覆盖该变量，
 > 所以 CI 里把它指到一个「不存在的开发库名」既满足断言、又永不会被连接。
 
-> ⚠️ **切勿在 job 级设 `NODE_ENV=production`**（W13-1 实测踩坑）：
+> ⚠️ **切勿在 job 级设 `NODE_ENV=production`**：
 > pnpm 会输出 `devDependencies: skipped because NODE_ENV is set to production` 并**跳过 devDependencies**，
 > 而 `pnpm install` **仍返回 0**，随后 `pnpm typecheck` 报 `sh: tsc: command not found`。
 > 因此 `NODE_ENV: production` **只加在 `Build` 步骤上**。
@@ -472,14 +469,14 @@ env NODE_ENV=production pnpm build  # 5
 brew install actionlint   # 校验 workflow YAML / 表达式 / shell 片段
 actionlint .github/workflows/ci.yml
 ```
-`actionlint` 会同时调用 `shellcheck` 检查 `run:` 片段。本地**已装** `actionlint 1.7.12`。
+`actionlint` 会同时调用 `shellcheck` 检查 `run:` 片段。以下命令在具备 `actionlint` 的环境执行；未安装时先 `brew install actionlint`。
 
 ### 8.6 Node 版本约定
 
 - `.nvmrc` = `22`；`package.json` `engines.node = ">=22 <23"`；`Dockerfile` 用 `node:22-bookworm-slim`。
 - ⚠️ `pnpm` 默认不做 engine 强校验：在 Node 24 下执行 `pnpm install` 只会打印
-  `WARN Unsupported engine: wanted: {"node":">=22 <23"}`，**不会失败**（本机实测退出码 0）。
-  若要强校验，可在 `.npmrc` 加 `engine-strict=true`（当前未加，避免影响现有开发机）。
+  `WARN Unsupported engine: wanted: {"node":">=22 <23"}`，**不会失败**。
+  若要强校验，可在 `.npmrc` 加 `engine-strict=true`（本仓库未启用，以免在版本不符的开发机上直接阻断安装）。
 
 ---
 
@@ -531,7 +528,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod-tls.yml config   # �
 > `SITE_TLS_MODE` **不要写成空串**：Caddyfile 的 `{$VAR:default}` 对「已设置为空」不生效，
 > 会报 `wrong argument count or unexpected line ending after 'tls'`。compose 的 `:-internal` 已规避。
 
-### 9.3 进线 IP 头清洗（W10-5 遗留项的处置）
+### 9.3 进线 IP 头清洗
 
 开源版应用侧两处**直接信任客户端可控的请求头**作为「客户端 IP」（第三处属闭源 form-capture 插件，已随插件移除）：
 

@@ -53,17 +53,20 @@ services:
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
       AI_GATEWAY_ALLOW_HOSTS: ${AI_GATEWAY_ALLOW_HOSTS:-}
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      # 用 node 自身发请求，而非 wget/curl：本镜像基于 node:22-bookworm-slim，
+      # 该基础镜像不含 wget/curl（官方 Dockerfile 安装后会 purge 掉），用它做探针
+      # 会导致容器永远不 healthy，进而阻塞 depends_on 的下游服务。
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3
     deploy:
       resources:
         limits:
-          # 上限须留出余量给同 VM 内的 postgres 与 Docker 自身：
-          # 本机 Docker VM 仅 2GB，而 dev 栈（app 1024M + postgres 256M）打满后
-          # VM 会持续换页，Virtualization.framework 进程实测飙到 95% CPU。
-          # 768M 对 Next.js dev 足够；如需更大请先上调 Docker Desktop 的 Memory 上限。
+          # 容器内存上限之和不要逼近 Docker VM 的总上限：打满后 VM 会持续换页，
+          # 表现为 CPU 飙高（而非 OOM），排查时容易误判为 CPU 问题。
+          # 这里给 app 768M，与 postgres 256M 及 Docker 自身留出余量。
+          # 如需更大，请先上调 Docker Desktop 的 Memory 上限再改此值。
           memory: 768M
 
   cron:
@@ -84,11 +87,14 @@ services:
       CRON_BASE_URL: http://app:3000
       CRON_SECRET: ${CRON_SECRET:-salescrm-cron-secure-secret-token-key}
       CRON_INTERVAL_MINUTES: ${CRON_INTERVAL_MINUTES:-5}
+      CRON_HEARTBEAT_FILE: /tmp/cron-last-success
     healthcheck:
-      test: ["CMD-SHELL", "ps aux | grep '[n]ode' || exit 1"]
+      # 判据是「任务是否真的跑通」，而非「进程是否存在」。
+      test: ["CMD", "node", "--no-warnings", "--experimental-strip-types", "scripts/cron-healthcheck.ts"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 120s
     deploy:
       resources:
         limits:

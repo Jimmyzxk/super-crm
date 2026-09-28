@@ -48,7 +48,10 @@ services:
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
       AI_GATEWAY_ALLOW_HOSTS: ${AI_GATEWAY_ALLOW_HOSTS:-}
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      # 用 node 自身发请求，而非 wget/curl：本镜像基于 node:22-bookworm-slim，
+      # 该基础镜像不含 wget/curl（官方 Dockerfile 安装后会 purge 掉），用它做探针
+      # 会导致容器永远不 healthy，进而阻塞 depends_on 的下游服务。
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -72,11 +75,17 @@ services:
       CRON_BASE_URL: http://app:3000
       CRON_SECRET: ${CRON_SECRET:?CRON_SECRET must be defined in .env}
       CRON_INTERVAL_MINUTES: ${CRON_INTERVAL_MINUTES:-5}
+      CRON_HEARTBEAT_FILE: /tmp/cron-last-success
     healthcheck:
-      test: ["CMD-SHELL", "ps aux | grep '[n]ode' || exit 1"]
+      # 判据是「任务是否真的跑通」，而非「进程是否存在」：进程活着但任务连续失败
+      # 时（应用未就绪 / 密钥不匹配 / 接口报错），公海回收与超时提醒会静默失效，
+      # 必须让这种状态可见。
+      test: ["CMD", "node", "--no-warnings", "--experimental-strip-types", "scripts/cron-healthcheck.ts"]
       interval: 30s
       timeout: 10s
       retries: 3
+      # 首轮任务可能尚未完成，给一个宽限期避免启动即被标记失败
+      start_period: 120s
     deploy:
       resources:
         limits:
