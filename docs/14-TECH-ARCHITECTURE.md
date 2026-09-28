@@ -38,7 +38,7 @@ Tailwind CSS
 | 样式 | Tailwind + 自建组件 | 不引入重型组件库 |
 | 密码 | bcrypt（cost 12） | |
 | 会话 | JWT + httpOnly Cookie（jose） | |
-| 测试 | Vitest + Playwright | |
+| 测试 | Vitest（单元 + 集成，含真实 PostgreSQL） | 未引入 E2E 框架 |
 
 ### 1.1 数据架构：在线池、过程记录、分析汇总
 

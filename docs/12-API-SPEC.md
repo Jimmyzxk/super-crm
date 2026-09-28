@@ -504,7 +504,9 @@ RLS 会让"不带租户上下文的查询返回 0 行"，因此**不能直接全
 | 去重 | `notifications` 的 `(task_id, type)` 唯一约束兜底 |
 | 隔离 | 单租户异常不影响其他租户 |
 
-### 5.2 `POST /api/public/plugins/form-capture/:formId/submit`
+### 5.2 `POST /api/public/plugins/form-capture/:formId/submit`（闭源插件）
+
+> 本节描述的接口属于**闭源的表单获客插件**，开源版不含该路由与实现。保留于此作为插件接入核心的接口设计参考。
 
 表单插件的公开提交入口。详见 [13 插件契约](./13-PLUGIN-CONTRACT.md)。
 
@@ -554,7 +556,9 @@ V1 **不实现事件总线**。表单 Handler 已经同步拿到 `ctx.core.creat
 | 路径 | Route Handlers |
 |---|---|
 | `POST /api/cron/scan-tasks` | 定时扫描 |
-| `POST /api/public/plugins/form-capture/:formId/submit` | 表单提交 |
+| `POST /api/public/plugins/form-capture/:formId/submit` | 表单提交（闭源插件的路由，开源版不含） |
 | `POST /api/v1/leads` | 外部 API 进线 |
 
-**合计 49 个 Action + 3 个 Route Handler。** 加接口要走 [产品概览](./01-PRODUCT-OVERVIEW.md) 第 6 节。
+**Route Handler 共 4 个**：`/api/health`、`/api/v1/leads`、以及 3 个 cron 端点（上表列出的 `/api/cron/*`）。Server Actions 数量随业务演进，以代码为准（`src/core/**/actions.ts`）。
+
+新增接口需同步更新本文档与类型定义。

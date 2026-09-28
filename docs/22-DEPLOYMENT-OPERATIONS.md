@@ -38,7 +38,7 @@
 
 ## 2. 环境变量逐项表
 
-> 来源：`.env.example` 80 行全量提取；必填性以 `docker-compose.yml` 是否含 `:?` 校验为准；代码读取点逐项核对。
+> 来源：对 `.env.example` 与代码中的 `process.env` 读取点逐项核对；必填性以 `docker-compose.yml` 是否含 `:?` 校验为准。
 
 | 变量 | 用途 | 示例 | 必填 | 代码读取点 |
 |---|---|---|---|---|
@@ -381,7 +381,7 @@ curl -s http://localhost:3000/api/health | jq .
 | `FATAL: role "salescrm_auth" cannot login` 或 `salescrm_migration` 登录失败预期外 | 误用 `NOLOGIN` 角色直连 | 应用连接固定用 `salescrm`（`DATABASE_URL`），迁移用 `salescrm_admin`（`MIGRATION_DATABASE_URL`）；`salescrm_auth/salescrm_migration` 仅作 `SECURITY DEFINER` 属主，不可登录 |
 | `gzip: invalid compressed data` / `gzip -t 未通过` | 备份被截断或磁盘满 | `rm -f .tmp_*.sql.gz`；`df -h` 查空间；`docker system prune` 清理后重跑 `./scripts/backup-db.sh` |
 | `ENCRYPTION_KEY` 未设导致三方密钥解密异常 | 生产未配主密钥 | 设 32 字符 `ENCRYPTION_KEY` 并重建容器；未设时代码从 `SESSION_SECRET` 派生，仅开发可用 |
-| `AI_GATEWAY_ALLOW_HOSTS` 配后仍 `SSRF Protection` 拦截 | 白名单格式不符或含空格/尾点未标准化 | 按 `.env.example:78` 格式 `llm-gateway.internal:8080,llm-gateway.internal`（逗号分隔、无协议、无路径）；`docker compose exec app node -e "console.log(process.env.AI_GATEWAY_ALLOW_HOSTS)"` 验证 |
+| `AI_GATEWAY_ALLOW_HOSTS` 配后仍 `SSRF Protection` 拦截 | 白名单格式不符或含空格/尾点未标准化 | 按 `.env.example` 中 `AI_GATEWAY_ALLOW_HOSTS` 的示例格式（逗号分隔的 `host:port`，无协议与路径）；`docker compose exec app node -e "console.log(process.env.AI_GATEWAY_ALLOW_HOSTS)"` 验证 |
 | Docker 持续占用大量 CPU | 容器内存配额之和逼近 Docker VM 上限，VM 反复换页；表现为 CPU 飙高而非 OOM，容易误判为 CPU 问题 | ①核对 Docker Desktop 的 Memory 上限与各容器 `deploy.resources.limits.memory` 之和，留出余量；②`docker ps` 停掉非必需容器（跑测试只需 postgres）；③`docker builder prune -f` 回收构建缓存；④如确需更大 app 内存，先上调 VM 上限再改容器配额 |
 
 > 兜底自检：`pnpm typecheck && pnpm lint && pnpm test`（开源版 78 个测试文件 / 550 条用例）是提交前门禁；分层门禁 `scripts/check-layer-boundary.ts` 由 `pnpm lint` 前置执行（`core`/`lib` 既不引 `@/plugins`，也不出现任何 `plugin_*` 业务插件表字样）。

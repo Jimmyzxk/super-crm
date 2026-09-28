@@ -69,23 +69,11 @@ describe('租户隔离：leads', () => {
 
 ### 3.3 必须覆盖的表
 
-| 表 | 状态 |
-|---|---|
-| `users` | ☐ |
-| `leads` | ☐ |
-| `customers` | ☐ |
-| `contacts` | ☐ |
-| `activities` | ☐ |
-| `tasks` | ☐ |
-| `opportunities` | ☐ |
-| `opportunity_stage_history` | ☐ |
-| `score_rules` | ☐ |
-| `score_feedback` | ☐ |
-| `notifications` | ☐ |
-| `lead_status_history` | ☐ |
-| `audit_logs` | ☐ |
-| `plugin_registry` / 三张表单插件表 | ☑ |
-| 每张插件表 | ☐ |
+新增业务表时，必须同时补一条跨租户访问被拒绝的测试。
+
+当前已覆盖的核心表（跨租户断言位于 `tests/integration/` 下的多个测试文件）：
+
+`users` · `leads` · `customers` · `contacts` · `activities` · `tasks` · `opportunities` · `opportunity_stage_history` · `notifications` · `lead_status_history` · `audit_logs` · `plugin_registry` 等
 
 **新建表时必须同时加这条测试，否则不允许合并。**
 
@@ -375,46 +363,26 @@ API 创建线索 → 自动质量判断 → 跟进未设下一步 → 生成质�
 |---|---|---|---|
 | 单元 | Vitest | `rules.ts` 纯函数 | 毫秒 |
 | 集成 | Vitest + 真实 PG | Action + 数据库 + RLS | 秒 |
-| 端到端 | Playwright | 完整用户流程 | 十秒级 |
+| 端到端 | **尚未引入**（规划中） | 完整用户流程 | — |
 
 **租户隔离测试必须是集成层**（需要真实 PostgreSQL 才能验证 RLS）。用 mock 数据库测不出 RLS。
 
 ---
 
-## 8. 每阶段的测试要求
-
-| 阶段 | 必须有的测试 |
-|---|---|
-| 0 工程骨架 | `users` 隔离测试；**邮箱规范化（第 1 条）**；**登录 RLS 回归（第 6 条）**；**会话版本失效且查询带租户（第 7 条）**；登录成功/失败 |
-| 0.5 池化数据契约 | 三池角色查询矩阵；旧来源字段迁移演练；游标和 `lead_conversions` 约束用例；容量数据分布与查询计划验收规格 |
-| 1 线索与跟进 | `leads` / `activities` / `tasks` 隔离；线索状态机；去重；记跟进副作用；**未分配不建任务（第 4 条）**；**任务挂客户（第 3 条）**；**重复线索两阶段确认（第 8 条）**；线索池代表数据执行计划 |
-| 2 评分与工作台 | 评分每个 operator；**自动触发 5 个断言**；工作台排序 |
-| 3 通知 | `notifications` 隔离；去重；**cron 逐租户扫描（第 2 条）**；并发防重入 |
-| **3.5 线索工作台试用** | **不写新业务测试**。跑全量回归，并记录真实销售的 5 天使用数据；不证明完整 V1 成功 |
-| 4 客户与商机 | `customers` / `contacts` / `opportunities` / `lead_conversions` 隔离；旧来源字段切换完成；商机阶段机；主联系人唯一；客户池和商机池代表数据执行计划 |
-| 4.4 三池角色视图 | SALES / MANAGER / ADMIN 同事实断言；指标到池筛选一致；列表无历史全量 JOIN 和 N+1；完整容量 P95 |
-| 4.5 AI 教练底座 | `sales_insights` 隔离；8 条规则；自动触发；业务成功/分析失败；建议过期、采纳、忽略；任务唯一 |
-| 4.6 外部 API | 来源密钥隔离与 hash；撤销；幂等重放/冲突；限流；禁止越权字段；统一创建副作用 |
-| 4.7 赢单打法 | 复盘证据；少于 3 样本拒绝；发布不可覆盖；跨租户样本拒绝；推荐和反馈 |
-| 5 插件 | 插件表隔离；公开表单窄定位函数；submission/Lead/link 原子关联（第 9 条）；**白名单建线索（第 5 条）**；零 fire-and-forget；停用后闭环仍通 |
-| 6 V1 完整价值试用 | 全量回归 + 3 条端到端链路 + 5 天完整价值门数据；不能只验证线索页 |
-
----
-
-## 9. 运行
+## 8. 运行
 
 ```bash
 pnpm test              # 全部
 pnpm test:unit         # 仅单元
 pnpm test:integration  # 仅集成（需要 PG）
-pnpm test:e2e          # 仅端到端
+# 端到端测试尚未接入（无 test:e2e 脚本）
 ```
 
 **每次提交前必跑** `pnpm typecheck && pnpm lint && pnpm test`。
 
 ---
 
-## 10. 测试清单总览
+## 9. 测试清单总览
 
 | 类别 | 数量估算 |
 |---|---|

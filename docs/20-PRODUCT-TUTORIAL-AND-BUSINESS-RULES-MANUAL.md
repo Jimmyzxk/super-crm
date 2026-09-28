@@ -238,7 +238,7 @@ B2B 复杂项目采购通常涉及多人决策链。系统在客户名下提供 
 
 ## 8. 经营分析与全景效能看板矩阵 (Business Intelligence & RevOps Analytics)
 
-摒弃传统“仅展示空洞大屏数字”的无价值面板，系统深度对标 **Salesforce Revenue Cloud、HubSpot Sales Hub Pro 与 Clari Revenue Intelligence**，构建了**诊断业务卡点、量化销售速率、指导团队人效、科学多情景预测**的现代 RevOps (Revenue Operations) 数据体系：
+经营分析的目标是回答具体问题，而不是堆砌指标。系统围绕**诊断业务卡点、量化销售速率、评估团队人效、多情景预测**四个方面组织数据：
 
 ### 8.1 国际标准销售速率模型 (Pipeline Velocity)
 $$V = \frac{N \times S \times W}{T}$$
@@ -459,7 +459,7 @@ $$V = \frac{N \times S \times W}{T}$$
 
 ## 14. AI Agent 矩阵战略评估与市场化差异化方案 (Autonomous AI Agent Matrix Evaluation)
 
-在现代 Enterprise AI 浪潮下，「Super CRM」的根本市场竞争力是**将传统被动记录型工具进化为 24/7 主动推进行动的数智化智能体矩阵 (Autonomous AI Agent Ecosystem)**，而非继续叠加表单与列表：
+系统的差异化在于把记录型工具推进为主动给出行动建议的 Agent 体系：
 
 ```mermaid
 graph TD
