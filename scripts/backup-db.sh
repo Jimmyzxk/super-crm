@@ -170,6 +170,10 @@ fail() {
 }
 
 # 1. 执行 pg_dump 并流式压缩至临时文件；pipefail 确保任一环节失败即非零退出
+#
+# 注意：Docker 未运行时**不要**加「自动拉起」（如 open -a Docker）之类的逻辑。
+# 备份任务主动启动 Docker Desktop 会触发系统权限申请弹窗，在 Docker 意外退出后
+# 反复打扰使用者。失败应明确失败：告警文件与日志已足够提示，人工启动即可。
 if ! docker exec "$PG_CONTAINER" pg_dump -U salescrm_admin salescrm 2>/dev/null | gzip > "$TMP_FILE"; then
   fail "pg_dump 失败：容器 $PG_CONTAINER 不可用（docker ps 确认名称）、库 salescrm 不存在、或权限不足"
 fi
